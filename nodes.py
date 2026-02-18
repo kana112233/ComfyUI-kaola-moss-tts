@@ -6,7 +6,7 @@ import soundfile as sf
 import numpy as np
 from pathlib import Path
 
-from transformers import AutoModel, AutoProcessor, AutoTokenizer
+from transformers import AutoModel, AutoProcessor, AutoTokenizer, AutoConfig
 from transformers.dynamic_module_utils import get_class_from_dynamic_module
 import transformers
 
@@ -155,19 +155,22 @@ class MossTTSDLoadModel:
 
         # 2. Construct Processor Manually
         # This bypasses AutoProcessor.from_pretrained which passes use_fast=False to AudioTokenizer (causing crash)
+        # The actual class is MossTTSDelayProcessor (not MossTTSProcessor)
         print("Constructing Processor...")
         try:
-            # Attempt to resolve the class from the remote code file
-            # Assuming standard MOSS structure: processing_moss_tts.py contains MossTTSProcessor
-            processor_class = get_class_from_dynamic_module("processing_moss_tts.MossTTSProcessor", model_path)
+            # Load model config (needed by processor for audio token IDs, sampling rate, etc.)
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+
+            # Resolve the processor class from the remote code file
+            processor_class = get_class_from_dynamic_module("processing_moss_tts.MossTTSDelayProcessor", model_path)
             
-            # Instantiate with text tokenizer only (audio_tokenizer added later via Codec node)
-            processor = processor_class(tokenizer=tokenizer, audio_tokenizer=None)
+            # Instantiate with text tokenizer and config (audio_tokenizer added later via Codec node)
+            processor = processor_class(tokenizer=tokenizer, audio_tokenizer=None, model_config=model_config)
             
         except Exception as e:
             print(f"Failed to manually construct processor: {e}")
             raise RuntimeError(
-                f"Validation Failed: Could not manually load MossTTSProcessor from {model_path}. "
+                f"Could not manually load MossTTSDelayProcessor from {model_path}. "
                 f"Ensure 'processing_moss_tts.py' exists. Error: {e}"
             )
 
