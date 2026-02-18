@@ -164,26 +164,41 @@ class MossTTSDNode:
                 codec_path=codec_path,
             )
 
+            # Check if accelerate is available for memory optimization
+            try:
+                import accelerate
+                use_accelerate = True
+            except ImportError:
+                use_accelerate = False
+                print("Accelerate not found. Install 'accelerate' for faster loading and less RAM usage.")
+
+            model_kwargs = {
+                "trust_remote_code": True,
+                "torch_dtype": self.dtype,
+            }
+            if use_accelerate:
+                model_kwargs["device_map"] = "auto"
+                model_kwargs["low_cpu_mem_usage"] = True
+            
             attn_implementation = "flash_attention_2" if self.device == "cuda" else "sdpa"
             try:
                 self.model = AutoModel.from_pretrained(
                     model_path,
-                    trust_remote_code=True,
                     attn_implementation=attn_implementation,
-                    torch_dtype=self.dtype,
-                    device_map="auto",
-                    low_cpu_mem_usage=True,
-                ).eval()
+                    **model_kwargs
+                )
             except Exception as e:
                 print(f"Failed to load with flash_attention_2, falling back to sdpa: {e}")
                 self.model = AutoModel.from_pretrained(
                     model_path,
-                    trust_remote_code=True,
                     attn_implementation="sdpa",
-                    torch_dtype=self.dtype,
-                    device_map="auto",
-                    low_cpu_mem_usage=True,
-                ).eval()
+                    **model_kwargs
+                )
+
+            if not use_accelerate:
+                self.model = self.model.to(self.device)
+            
+            self.model = self.model.eval()
 
             # Keep audio_tokenizer on CPU to save VRAM, move to GPU only when needed
             self.processor.audio_tokenizer = self.processor.audio_tokenizer.cpu().eval()

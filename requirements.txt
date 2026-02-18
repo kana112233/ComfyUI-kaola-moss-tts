@@ -17,3 +17,4 @@ packaging
 ninja
 setuptools
 wheel
+accelerate
