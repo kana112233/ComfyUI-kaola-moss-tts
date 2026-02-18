@@ -104,6 +104,29 @@ class MossTTSDNode:
                 print(f"Failed to auto-download/redirect model: {e}")
                 print("Falling back to default HF loading (might fail with ModuleNotFoundError).")
 
+        # Auto-download Tokenizer/Codec if default
+        if codec_path == "OpenMOSS-Team/MOSS-Audio-Tokenizer":
+            try:
+                from huggingface_hub import snapshot_download
+                import os
+                
+                if folder_paths:
+                    base_path = os.path.join(folder_paths.models_dir, "moss_ttsd")
+                else:
+                    base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "moss_ttsd")
+                
+                local_codec_path = os.path.join(base_path, "MOSS-Audio-Tokenizer")
+                
+                if not os.path.exists(local_codec_path):
+                    print(f"Downloading MOSS-Audio-Tokenizer to {local_codec_path}...")
+                    snapshot_download(repo_id=codec_path, local_dir=local_codec_path)
+                
+                print(f"Using local MOSS-Audio-Tokenizer: {local_codec_path}")
+                codec_path = local_codec_path
+                
+            except Exception as e:
+                print(f"Failed to auto-download/redirect codec: {e}")
+
         if self.model is None or self.processor is None:
             print(f"Loading MOSS-TTSD model from {model_path}...")
             self.processor = AutoProcessor.from_pretrained(
