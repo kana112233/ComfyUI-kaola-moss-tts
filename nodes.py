@@ -263,21 +263,14 @@ class MossTTSDNode:
                  # The example uses "continuation" mode.
                  pass
 
-            # Move audio_tokenizer to GPU temporarily for encoding
-            import torch
-            if hasattr(self, '_audio_tokenizer_device') and self._audio_tokenizer_device == "cpu":
-                torch.cuda.empty_cache()
-                self.processor.audio_tokenizer = self.processor.audio_tokenizer.to(self.device)
-                print(f"[MOSS-TTSD] Moved audio_tokenizer to {self.device} for encoding")
-
-            try:
+            # Encode on CPU to avoid VRAM OOM
+            if hasattr(self, '_audio_tokenizer_device') and self._audio_tokenizer_device != "cpu":
+                 self.processor.audio_tokenizer = self.processor.audio_tokenizer.cpu()
+                 self._audio_tokenizer_device = "cpu"
+                 torch.cuda.empty_cache()
+            
+            with torch.no_grad():
                 reference_audio_codes = self.processor.encode_audios_from_wav(ref_wavs, sampling_rate=target_sr)
-            finally:
-                # Move back to CPU to free VRAM
-                if hasattr(self, '_audio_tokenizer_device') and self._audio_tokenizer_device == "cpu":
-                    self.processor.audio_tokenizer = self.processor.audio_tokenizer.cpu()
-                    torch.cuda.empty_cache()
-                    print(f"[MOSS-TTSD] Moved audio_tokenizer back to CPU, freed VRAM")
 
             # For prompt_audio (assistant message start), example concatenates prompts
             # concat_prompt_wav = torch.cat([wav1, wav2], dim=-1)
