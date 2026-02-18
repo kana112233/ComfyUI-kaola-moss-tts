@@ -18,3 +18,4 @@ ninja
 setuptools
 wheel
 accelerate
+bitsandbytes

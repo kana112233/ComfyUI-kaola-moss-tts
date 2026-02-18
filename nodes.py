@@ -56,13 +56,7 @@ try:
 except ImportError:
     folder_paths = None
 
-class MossTTSDNode:
-    def __init__(self):
-        self.model = None
-        self.processor = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
-
+class MossTTSDLoadModel:
     @classmethod
     def INPUT_TYPES(s):
         # Default options
@@ -74,17 +68,165 @@ class MossTTSDNode:
             local_models = folder_paths.get_filename_list("moss_ttsd")
             if local_models:
                  model_options.extend(local_models)
-            
-            # Also check LLM folder? Or just keep it strictly moss_ttsd for now.
-            # We can also look in 'LLM' or 'transformers' folders if they exist
-            # but let's stick to specific folder or HF ID.
         
         return {
             "required": {
-                "text": ("STRING", {"multiline": True, "default": "[S1] Hello world."}),
                 "model_path": (model_options,),
                 "codec_path": (codec_options,),
                 "quantization": (["none", "8bit", "4bit"], {"default": "none"}),
+            }
+        }
+
+    RETURN_TYPES = ("MOSS_TTSD_MODEL",)
+    RETURN_NAMES = ("moss_model",)
+    FUNCTION = "load"
+    CATEGORY = "Kaola/MOSS-TTSD"
+
+    def load(self, model_path, codec_path, quantization):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.bfloat16 if device == "cuda" else torch.float32
+
+        if quantization != "none" and device == "cpu":
+            print("Quantization not supported on CPU. Forcing 'none'.")
+            quantization = "none"
+
+        # Resolve paths if they are local filenames
+        if folder_paths:
+            if model_path in folder_paths.get_filename_list("moss_ttsd"):
+                 model_path = folder_paths.get_full_path("moss_ttsd", model_path)
+        
+        # Use local model path if default HF Hub ID is specified
+        if model_path == "OpenMOSS-Team/MOSS-TTSD-v1.0":
+            try:
+                import os
+                # Use the existing v1.0 directory
+                if folder_paths:
+                    base_path = os.path.join(folder_paths.models_dir, "moss_ttsd")
+                else:
+                    base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "moss_ttsd")
+
+                local_model_path = os.path.join(base_path, "MOSS-TTSD-v1.0")
+
+                if os.path.exists(local_model_path):
+                    print(f"Using local MOSS-TTSD path: {local_model_path}")
+                    model_path = local_model_path
+            except Exception as e:
+                print(f"Failed to redirect to local model: {e}")
+
+        # Auto-download Tokenizer/Codec if default
+        if codec_path == "OpenMOSS-Team/MOSS-Audio-Tokenizer":
+            try:
+                from huggingface_hub import snapshot_download
+                import os
+                if folder_paths:
+                    base_path = os.path.join(folder_paths.models_dir, "moss_ttsd")
+                else:
+                    base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "moss_ttsd")
+                
+                local_codec_path = os.path.join(base_path, "MOSS-Audio-Tokenizer")
+                
+                if not os.path.exists(local_codec_path):
+                    print(f"Downloading MOSS-Audio-Tokenizer to {local_codec_path}...")
+                    snapshot_download(repo_id=codec_path, local_dir=local_codec_path)
+                
+                print(f"Using local MOSS-Audio-Tokenizer: {local_codec_path}")
+                codec_path = local_codec_path
+            except Exception as e:
+                print(f"Failed to auto-download/redirect codec: {e}")
+
+        print(f"Loading MOSS-TTSD model from {model_path}...")
+        # Use use_fast=False to avoid "data did not match any variant of untagged enum ModelWrapper"
+        processor = AutoProcessor.from_pretrained(
+            model_path,
+            trust_remote_code=True,
+            codec_path=codec_path,
+            use_fast=False,
+        )
+        
+        # Audio tokenizer to CPU first to save VRAM and avoid OOM
+        processor.audio_tokenizer = processor.audio_tokenizer.cpu().eval()
+
+        # Check if accelerate is available for memory optimization
+        try:
+            import accelerate
+            use_accelerate = True
+        except ImportError:
+            use_accelerate = False
+            if quantization != "none":
+                print("Warning: Quantization requires 'accelerate' and 'bitsandbytes'. Install them to use 8bit/4bit.")
+            print("Accelerate not found. Install 'accelerate' for faster loading and less RAM usage.")
+
+        model_kwargs = {
+            "trust_remote_code": True,
+            "torch_dtype": dtype,
+        }
+        if use_accelerate:
+            model_kwargs["device_map"] = "auto"
+            model_kwargs["low_cpu_mem_usage"] = True
+        
+        # Application of Quantization
+        if quantization == "8bit":
+            model_kwargs["load_in_8bit"] = True
+            print("Loading model in 8-bit precision...")
+        elif quantization == "4bit":
+            model_kwargs["load_in_4bit"] = True
+            model_kwargs["bnb_4bit_compute_dtype"] = torch.float16
+            print("Loading model in 4-bit precision...")
+
+        attn_implementation = "flash_attention_2" if device == "cuda" else "sdpa"
+        model = None
+        try:
+            model = AutoModel.from_pretrained(
+                model_path,
+                attn_implementation=attn_implementation,
+                **model_kwargs
+            )
+        except Exception as e:
+            print(f"Failed to load with flash_attention_2/quantization settings, checking issues: {e}")
+            
+            # Fallback: try without quantization kwargs if they caused the issue
+            if quantization != "none":
+                 print("Fallback: Trying standard loading without quantization...")
+                 if "load_in_8bit" in model_kwargs: del model_kwargs["load_in_8bit"]
+                 if "load_in_4bit" in model_kwargs: del model_kwargs["load_in_4bit"]
+                 if "bnb_4bit_compute_dtype" in model_kwargs: del model_kwargs["bnb_4bit_compute_dtype"]
+            
+            try:
+                model = AutoModel.from_pretrained(
+                    model_path,
+                    attn_implementation="sdpa",
+                    **model_kwargs
+                )
+            except Exception as e2:
+                print(f"Second loading attempt failed: {e2}")
+                # Last ditch attempt
+                model = AutoModel.from_pretrained(
+                    model_path,
+                    trust_remote_code=True,
+                    torch_dtype=dtype
+                )
+
+        if not use_accelerate and quantization == "none":
+            model = model.to(device)
+        
+        model = model.eval()
+
+        moss_model = {
+            "model": model,
+            "processor": processor,
+            "device": device,
+            "dtype": dtype
+        }
+        return (moss_model,)
+
+
+class MossTTSDGenerate:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "moss_model": ("MOSS_TTSD_MODEL",),
+                "text": ("STRING", {"multiline": True, "default": "[S1] Hello world."}),
                 "temperature": ("FLOAT", {"default": 1.1, "min": 0.1, "max": 2.0, "step": 0.1}),
                 "top_p": ("FLOAT", {"default": 0.9, "min": 0.1, "max": 1.0, "step": 0.05}),
                 "repetition_penalty": ("FLOAT", {"default": 1.1, "min": 1.0, "max": 2.0, "step": 0.1}),
@@ -103,121 +245,6 @@ class MossTTSDNode:
     FUNCTION = "generate"
     CATEGORY = "Kaola/MOSS-TTSD"
 
-    def load_model(self, model_path, codec_path, quantization="none"):
-        if quantization != "none" and self.device == "cpu":
-            print("Quantization not supported on CPU. Forcing 'none'.")
-            quantization = "none"
-
-        # Resolve paths if they are local filenames
-        if folder_paths:
-            if model_path in folder_paths.get_filename_list("moss_ttsd"):
-                 model_path = folder_paths.get_full_path("moss_ttsd", model_path)
-            
-            # Since codec path logic is similar, we could add a folder for it too,
-            # currently just treating it as raw string or HF Hub ID unless we add specific folder logic.
-        
-        # Use local model path if default HF Hub ID is specified
-        if model_path == "OpenMOSS-Team/MOSS-TTSD-v1.0":
-            try:
-                import os
-
-                # Use the existing v1.0 directory
-                if folder_paths:
-                    base_path = os.path.join(folder_paths.models_dir, "moss_ttsd")
-                else:
-                    base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "moss_ttsd")
-
-                local_model_path = os.path.join(base_path, "MOSS-TTSD-v1.0")
-
-                if os.path.exists(local_model_path):
-                    print(f"Using local MOSS-TTSD path: {local_model_path}")
-                    model_path = local_model_path
-
-            except Exception as e:
-                print(f"Failed to redirect to local model: {e}")
-
-        # Auto-download Tokenizer/Codec if default
-        if codec_path == "OpenMOSS-Team/MOSS-Audio-Tokenizer":
-            try:
-                from huggingface_hub import snapshot_download
-                import os
-                
-                if folder_paths:
-                    base_path = os.path.join(folder_paths.models_dir, "moss_ttsd")
-                else:
-                    base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "moss_ttsd")
-                
-                local_codec_path = os.path.join(base_path, "MOSS-Audio-Tokenizer")
-                
-                if not os.path.exists(local_codec_path):
-                    print(f"Downloading MOSS-Audio-Tokenizer to {local_codec_path}...")
-                    snapshot_download(repo_id=codec_path, local_dir=local_codec_path)
-                
-                print(f"Using local MOSS-Audio-Tokenizer: {local_codec_path}")
-                codec_path = local_codec_path
-                
-            except Exception as e:
-                print(f"Failed to auto-download/redirect codec: {e}")
-
-        if self.model is None or self.processor is None:
-            print(f"Loading MOSS-TTSD model from {model_path}...")
-            # Use use_fast=False to avoid "data did not match any variant of untagged enum ModelWrapper"
-            # which happens when local tokenizers library is too old for the model's tokenizer.json
-            self.processor = AutoProcessor.from_pretrained(
-                model_path,
-                trust_remote_code=True,
-                codec_path=codec_path,
-            )
-
-            # Check if accelerate is available for memory optimization
-            try:
-                import accelerate
-                use_accelerate = True
-            except ImportError:
-                use_accelerate = False
-                print("Accelerate not found. Install 'accelerate' for faster loading and less RAM usage.")
-
-            model_kwargs = {
-                "trust_remote_code": True,
-                "torch_dtype": self.dtype,
-            }
-            if use_accelerate:
-                model_kwargs["device_map"] = "auto"
-                model_kwargs["low_cpu_mem_usage"] = True
-            
-            # Application of Quantization
-            if quantization == "8bit":
-                model_kwargs["load_in_8bit"] = True
-                print("Loading model in 8-bit precision...")
-            elif quantization == "4bit":
-                model_kwargs["load_in_4bit"] = True
-                model_kwargs["bnb_4bit_compute_dtype"] = torch.float16
-                print("Loading model in 4-bit precision...")
-
-            attn_implementation = "flash_attention_2" if self.device == "cuda" else "sdpa"
-            try:
-                self.model = AutoModel.from_pretrained(
-                    model_path,
-                    attn_implementation=attn_implementation,
-                    **model_kwargs
-                )
-            except Exception as e:
-                print(f"Failed to load with flash_attention_2, falling back to sdpa: {e}")
-                self.model = AutoModel.from_pretrained(
-                    model_path,
-                    attn_implementation="sdpa",
-                    **model_kwargs
-                )
-
-            if not use_accelerate and quantization == "none":
-                self.model = self.model.to(self.device)
-            
-            self.model = self.model.eval()
-
-            # Keep audio_tokenizer on CPU to save VRAM, move to GPU only when needed
-            self.processor.audio_tokenizer = self.processor.audio_tokenizer.cpu().eval()
-            self._audio_tokenizer_device = "cpu"
-
     def preprocess_audio(self, audio_data, target_sr):
         # ComfyUI audio format: {"waveform": tensor(ch, samples), "sample_rate": int}
         waveform = audio_data["waveform"]
@@ -233,12 +260,15 @@ class MossTTSDNode:
             
         return waveform
 
-    def generate(self, text, model_path, codec_path, quantization, temperature, top_p, repetition_penalty, max_new_tokens,
+    def generate(self, moss_model, text, temperature, top_p, repetition_penalty, max_new_tokens,
                  reference_audio_s1=None, reference_text_s1=None, 
                  reference_audio_s2=None, reference_text_s2=None):
         
-        self.load_model(model_path, codec_path, quantization)
-        target_sr = int(self.processor.model_config.sampling_rate)
+        model = moss_model["model"]
+        processor = moss_model["processor"]
+        device = moss_model["device"]
+        
+        target_sr = int(processor.model_config.sampling_rate)
         
         audio_inputs = []
         if reference_audio_s1:
@@ -250,102 +280,58 @@ class MossTTSDNode:
             
         # Encode reference audios
         if audio_inputs:
-            # Need to handle merging multiple references if provided
-            # For simplicity, following the example structure
-            # But the example concatenates them.
-            # If we align with prompts S1/S2...
-            
-            # Re-reading example logic:
-            # It encodes audios from wav for reference_audio_codes (used in user message)
-            # And also encodes for prompt_audio (used in assistant message)
-            
-            # Let's simplify: if we have ref audio, use it.
-            # The example combines wav1 and wav2 into one "reference_audio_codes" for the prompt??
-            # Actually:
-            # reference_audio_codes = processor.encode_audios_from_wav([wav1, wav2], sampling_rate=target_sr)
-            # This returns a list of codes.
-            
             ref_wavs = []
             if reference_audio_s1: ref_wavs.append(self.preprocess_audio(reference_audio_s1, target_sr))
             if reference_audio_s2: ref_wavs.append(self.preprocess_audio(reference_audio_s2, target_sr))
 
-            # Handle empty ref (no cloning?)
-            if not ref_wavs:
-                 # What if no reference? Use pre-trained voices?
-                 # MOSS-TTSD seems to require reference for continuation/cloning.
-                 # If no ref provided, maybe fail or try generation mode without continuation?
-                 # The example uses "continuation" mode.
-                 pass
-
-            # Encode on CPU to avoid VRAM OOM
-            if hasattr(self, '_audio_tokenizer_device') and self._audio_tokenizer_device != "cpu":
-                 self.processor.audio_tokenizer = self.processor.audio_tokenizer.cpu()
-                 self._audio_tokenizer_device = "cpu"
-                 torch.cuda.empty_cache()
+            # Ensure audio tokenizer is on CPU to avoid VRAM OOM
+            processor.audio_tokenizer = processor.audio_tokenizer.cpu()
+            torch.cuda.empty_cache()
             
             with torch.no_grad():
-                reference_audio_codes = self.processor.encode_audios_from_wav(ref_wavs, sampling_rate=target_sr)
-
-            # For prompt_audio (assistant message start), example concatenates prompts
-            # concat_prompt_wav = torch.cat([wav1, wav2], dim=-1)
-            # prompt_audio = processor.encode_audios_from_wav([concat_prompt_wav], sampling_rate=target_sr)[0]
+                reference_audio_codes = processor.encode_audios_from_wav(ref_wavs, sampling_rate=target_sr)
 
             # Construct full text prompt
-            # prompt_text_speaker1 + prompt_text_speaker2 + text_to_generate
             full_prompt = ""
             if reference_text_s1: full_prompt += f"{reference_text_s1} "
             if reference_text_s2: full_prompt += f"{reference_text_s2} "
             full_prompt += text
 
             # Concatenate wavs for the assistant prompt audio
-            max_len = max([w.shape[-1] for w in ref_wavs])
-            # We need to concat them along time dimension?
-            # Example: torch.cat([wav1, wav2], dim=-1)
-            # Ensure same number of channels?
-            # Comfy audio usually stereo or mono. MOSS might expect mono?
-            # sf.read returns (samples, channels) usually, but ALWAYS_2D=True
-            # preprocess_audio returns (channels, samples).
-            # We should probably mix down to mono if needed?
-
-            # Let's just concat for now.
             concat_wav = torch.cat(ref_wavs, dim=-1)
 
             # Encode prompt audio on CPU
             with torch.no_grad():
-                prompt_audio_list = self.processor.encode_audios_from_wav([concat_wav], sampling_rate=target_sr)
+                prompt_audio_list = processor.encode_audios_from_wav([concat_wav], sampling_rate=target_sr)
             
             prompt_audio = prompt_audio_list[0]
 
             conversations = [
                 [
-                    self.processor.build_user_message(
+                    processor.build_user_message(
                         text=full_prompt,
                         reference=reference_audio_codes,
                     ),
-                    self.processor.build_assistant_message(
+                    processor.build_assistant_message(
                         audio_codes_list=[prompt_audio]
                     ),
                 ],
             ]
         else:
-            # No reference mode?
-            # "generation" mode might not need references?
-            # For now assume reference is provided or fallback to simple generation
-            # If no reference, maybe just text?
             conversations = [
                 [
-                    self.processor.build_user_message(text=text),
-                    self.processor.build_assistant_message(audio_codes_list=[]),
+                    processor.build_user_message(text=text),
+                    processor.build_assistant_message(audio_codes_list=[]),
                 ]
             ]
 
         # Inference
-        batch = self.processor(conversations, mode="continuation" if audio_inputs else "generation")
-        input_ids = batch["input_ids"].to(self.device)
-        attention_mask = batch["attention_mask"].to(self.device)
+        batch = processor(conversations, mode="continuation" if audio_inputs else "generation")
+        input_ids = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
 
         with torch.no_grad():
-            outputs = self.model.generate(
+            outputs = model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens,
@@ -356,7 +342,7 @@ class MossTTSDNode:
 
         # Decode
         generated_audio = []
-        for message in self.processor.decode(outputs):
+        for message in processor.decode(outputs):
             for audio in message.audio_codes_list:
                 generated_audio.append(audio.detach().cpu())
 
@@ -372,9 +358,11 @@ class MossTTSDNode:
         return ({"waveform": final_audio, "sample_rate": target_sr},)
 
 NODE_CLASS_MAPPINGS = {
-    "MossTTSDNode": MossTTSDNode
+    "MossTTSDLoadModel": MossTTSDLoadModel,
+    "MossTTSDGenerate": MossTTSDGenerate
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "MossTTSDNode": "MOSS-TTSD Generation"
+    "MossTTSDLoadModel": "Load MOSS-TTSD Model",
+    "MossTTSDGenerate": "Run MOSS-TTSD Generation"
 }
