@@ -243,9 +243,10 @@ class MossTTSDGenerate:
                 "moss_model": ("MOSS_TTSD_MODEL",),
                 "moss_codec": ("MOSS_AUDIO_CODEC",),
                 "text": ("STRING", {"multiline": True, "default": "[S1] Hello world."}),
-                "temperature": ("FLOAT", {"default": 1.1, "min": 0.1, "max": 2.0, "step": 0.1}),
-                "top_p": ("FLOAT", {"default": 0.9, "min": 0.1, "max": 1.0, "step": 0.05}),
-                "repetition_penalty": ("FLOAT", {"default": 1.1, "min": 1.0, "max": 2.0, "step": 0.1}),
+                "audio_temperature": ("FLOAT", {"default": 1.1, "min": 0.1, "max": 2.0, "step": 0.1}),
+                "audio_top_p": ("FLOAT", {"default": 0.9, "min": 0.1, "max": 1.0, "step": 0.05}),
+                "audio_repetition_penalty": ("FLOAT", {"default": 1.1, "min": 1.0, "max": 2.0, "step": 0.1}),
+                "text_temperature": ("FLOAT", {"default": 1.1, "min": 0.1, "max": 2.0, "step": 0.1}),
                 "max_new_tokens": ("INT", {"default": 2000, "min": 100, "max": 10000}),
             },
             "optional": {
@@ -269,7 +270,7 @@ class MossTTSDGenerate:
             waveform = torchaudio.functional.resample(waveform, sr, target_sr)
         return waveform
 
-    def generate(self, moss_model, moss_codec, text, temperature, top_p, repetition_penalty, max_new_tokens,
+    def generate(self, moss_model, moss_codec, text, audio_temperature, audio_top_p, audio_repetition_penalty, text_temperature, max_new_tokens,
                  reference_audio_s1=None, reference_text_s1=None, 
                  reference_audio_s2=None, reference_text_s2=None):
         
@@ -340,9 +341,10 @@ class MossTTSDGenerate:
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                repetition_penalty=repetition_penalty,
+                audio_temperature=audio_temperature,
+                audio_top_p=audio_top_p,
+                audio_repetition_penalty=audio_repetition_penalty,
+                text_temperature=text_temperature,
             )
 
         generated_audio = []
