@@ -13,6 +13,29 @@ if moss_path not in sys.path:
     sys.path.append(moss_path)
 
 from transformers import AutoModel, AutoProcessor
+import transformers
+
+# Monkey-patch for Qwen3 support (aliased to Qwen2)
+# MOSS-TTSD references `transformers.models.qwen3` which doesn't exist in standard transformers.
+try:
+    from transformers.models import qwen2
+    import sys
+    
+    if "transformers.models.qwen3" not in sys.modules:
+        sys.modules["transformers.models.qwen3"] = qwen2
+        transformers.models.qwen3 = qwen2
+        
+        # Alias classes
+        if not hasattr(qwen2, "Qwen3Config"):
+            setattr(qwen2, "Qwen3Config", qwen2.Qwen2Config)
+        if not hasattr(qwen2, "Qwen3Model"):
+            setattr(qwen2, "Qwen3Model", qwen2.Qwen2Model)
+        if not hasattr(qwen2, "Qwen3ForCausalLM"):
+            setattr(qwen2, "Qwen3ForCausalLM", qwen2.Qwen2ForCausalLM)
+            
+        print("Monkey-patched transformers.models.qwen3 -> qwen2")
+except ImportError:
+    print("Failed to patch Qwen3 support: transformers.models.qwen2 not found.")
 
 # Try to import folder_paths from comfy
 try:
