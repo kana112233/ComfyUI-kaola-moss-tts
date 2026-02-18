@@ -303,18 +303,10 @@ class MossTTSDNode:
             # Let's just concat for now.
             concat_wav = torch.cat(ref_wavs, dim=-1)
 
-            # Move audio_tokenizer to GPU temporarily for encoding
-            if hasattr(self, '_audio_tokenizer_device') and self._audio_tokenizer_device == "cpu":
-                torch.cuda.empty_cache()
-                self.processor.audio_tokenizer = self.processor.audio_tokenizer.to(self.device)
-
-            try:
+            # Encode prompt audio on CPU
+            with torch.no_grad():
                 prompt_audio_list = self.processor.encode_audios_from_wav([concat_wav], sampling_rate=target_sr)
-            finally:
-                if hasattr(self, '_audio_tokenizer_device') and self._audio_tokenizer_device == "cpu":
-                    self.processor.audio_tokenizer = self.processor.audio_tokenizer.cpu()
-                    torch.cuda.empty_cache()
-
+            
             prompt_audio = prompt_audio_list[0]
 
             conversations = [
