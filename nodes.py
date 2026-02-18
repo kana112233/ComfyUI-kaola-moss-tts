@@ -353,11 +353,15 @@ class MossTTSDGenerate:
                 generated_audio.append(audio.detach().cpu())
 
         if not generated_audio:
-            return ({"waveform": torch.zeros(1, target_sr), "sample_rate": target_sr},)
+            # ComfyUI AUDIO expects shape [batch, channels, samples]
+            return ({"waveform": torch.zeros(1, 1, target_sr), "sample_rate": target_sr},)
 
         final_audio = torch.cat(generated_audio, dim=-1)
+        # Ensure shape is [batch, channels, samples] for ComfyUI
         if final_audio.dim() == 1:
-            final_audio = final_audio.unsqueeze(0)
+            final_audio = final_audio.unsqueeze(0).unsqueeze(0)  # [samples] -> [1, 1, samples]
+        elif final_audio.dim() == 2:
+            final_audio = final_audio.unsqueeze(0)  # [channels, samples] -> [1, channels, samples]
 
         return ({"waveform": final_audio, "sample_rate": target_sr},)
 
