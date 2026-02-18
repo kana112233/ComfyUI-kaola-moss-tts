@@ -323,10 +323,10 @@ class MossTTSDGenerate:
                 ],
             ]
         else:
+            # generation mode: conversation must have ODD length, last message = user
             conversations = [
                 [
                     processor.build_user_message(text=text),
-                    processor.build_assistant_message(audio_codes_list=[]),
                 ]
             ]
 
