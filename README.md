@@ -23,6 +23,12 @@ A ComfyUI custom node for [MOSS-TTSD](https://github.com/OpenMOSS/MOSS-TTSD), a 
 
     *Note: For GPU acceleration, ensure you have a CUDA-compatible PyTorch installed.*
 
+> [!WARNING]
+> This node requires `transformers >= 5.0.0`. Please make sure your environment meets this requirement:
+> ```bash
+> pip install "transformers>=5.0.0"
+> ```
+
 ## Usage
 
 1.  From the node menu, select `Kaola` -> `MOSS-TTSD` -> `MOSS-TTSD Generation`.
