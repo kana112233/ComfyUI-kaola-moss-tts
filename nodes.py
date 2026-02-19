@@ -333,7 +333,13 @@ class MossTTSDGenerate:
             print(f"Warning: mode='{mode}' requires reference audio. Falling back to 'generation'.")
             mode = "generation"
             
-        # Build conversation based on mode (follows official MOSS-TTSD inference logic)
+        # Phase 1: Resolve fallbacks (continuation modes require reference text)
+        if mode in ("continuation", "voice_clone_and_continuation"):
+            if not any(rt.strip() for rt in ref_texts):
+                print(f"Warning: mode='{mode}' requires reference text. Falling back to 'voice_clone'.")
+                mode = "voice_clone"
+
+        # Phase 2: Build conversation based on resolved mode
         if mode == "generation":
             # Pure generation: just text, no reference
             conversations = [[processor.build_user_message(text=text)]]
@@ -341,7 +347,6 @@ class MossTTSDGenerate:
 
         elif mode == "voice_clone":
             # Voice cloning: encode each speaker's reference audio separately
-            # User message includes reference audio codes, mode = "generation" (odd-length conversation)
             print(f"[MOSS-TTSD] voice_clone: encoding {len(ref_wavs)} reference audio(s)")
             for i, rw in enumerate(ref_wavs):
                 print(f"  ref_wav[{i}] shape={rw.shape}")
@@ -371,11 +376,13 @@ class MossTTSDGenerate:
                     rt = f"{tag}{rt}"
                 prefixed_text += rt
             prefixed_text += text
+            print(f"[MOSS-TTSD] continuation: prefixed_text preview: {prefixed_text[:200]}")
 
-            # Encode concatenated reference audio as prompt
             concat_wav = torch.cat(ref_wavs, dim=-1)
+            print(f"[MOSS-TTSD] continuation: concat_wav shape={concat_wav.shape}")
             with torch.no_grad():
                 prompt_audio = processor.encode_audios_from_wav([concat_wav], sampling_rate=target_sr)[0]
+            print(f"[MOSS-TTSD] continuation: prompt_audio shape={prompt_audio.shape}")
 
             conversations = [[
                 processor.build_user_message(text=prefixed_text),
@@ -392,12 +399,14 @@ class MossTTSDGenerate:
                     rt = f"{tag}{rt}"
                 prefixed_text += rt
             prefixed_text += text
+            print(f"[MOSS-TTSD] voice_clone_and_continuation: prefixed_text preview: {prefixed_text[:200]}")
 
             with torch.no_grad():
                 reference = processor.encode_audios_from_wav(ref_wavs, sampling_rate=target_sr)
             concat_wav = torch.cat(ref_wavs, dim=-1)
             with torch.no_grad():
                 prompt_audio = processor.encode_audios_from_wav([concat_wav], sampling_rate=target_sr)[0]
+            print(f"[MOSS-TTSD] voice_clone_and_continuation: reference={len(reference)}, prompt_audio={prompt_audio.shape}")
 
             conversations = [[
                 processor.build_user_message(text=prefixed_text, reference=reference),
@@ -406,9 +415,11 @@ class MossTTSDGenerate:
             processor_mode = "continuation"
 
         # Inference
+        print(f"[MOSS-TTSD] Final mode: {mode}, processor_mode: {processor_mode}")
         batch = processor(conversations, mode=processor_mode)
         input_ids = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
+        print(f"[MOSS-TTSD] input_ids shape: {input_ids.shape}")
 
         with torch.no_grad(), _patch_tqdm_for_comfyui(model):
             outputs = model.generate(
@@ -421,16 +432,34 @@ class MossTTSDGenerate:
                 text_temperature=text_temperature,
             )
 
+        print(f"[MOSS-TTSD] model.generate() returned {len(outputs)} outputs")
+        for i, (start_length, gen_ids) in enumerate(outputs):
+            print(f"  output[{i}]: start_length={start_length}, gen_ids shape={gen_ids.shape}")
+
+        # Decode outputs - processor.decode() returns List[Optional[AssistantMessage]]
+        # AssistantMessage.audio_codes_list contains decoded waveform tensors
         generated_audio = []
-        for message in processor.decode(outputs):
-            for audio in message.audio_codes_list:
-                generated_audio.append(audio.detach().cpu())
+        messages = processor.decode(outputs)
+        for i, message in enumerate(messages):
+            if message is None:
+                print(f"[MOSS-TTSD] decode: message[{i}] is None (empty content)")
+                continue
+            print(f"[MOSS-TTSD] decode: message[{i}] has {len(message.audio_codes_list)} audio segments")
+            for j, wav in enumerate(message.audio_codes_list):
+                if not isinstance(wav, torch.Tensor):
+                    print(f"  audio[{j}] is not tensor, skipping: {type(wav)}")
+                    continue
+                wav = wav.detach().to(dtype=torch.float32, device="cpu").reshape(-1)
+                print(f"  audio[{j}] waveform: {wav.shape}, min={wav.min():.4f}, max={wav.max():.4f}")
+                generated_audio.append(wav)
 
         if not generated_audio:
+            print("[MOSS-TTSD] WARNING: No audio generated!")
             # ComfyUI AUDIO expects shape [batch, channels, samples]
             return ({"waveform": torch.zeros(1, 1, target_sr), "sample_rate": target_sr},)
 
         final_audio = torch.cat(generated_audio, dim=-1)
+        print(f"[MOSS-TTSD] Final audio: {final_audio.shape}, duration={final_audio.shape[-1]/target_sr:.2f}s")
         # Ensure shape is [batch, channels, samples] for ComfyUI
         if final_audio.dim() == 1:
             final_audio = final_audio.unsqueeze(0).unsqueeze(0)  # [samples] -> [1, 1, samples]
