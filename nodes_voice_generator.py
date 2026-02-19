@@ -230,7 +230,21 @@ class MossVoiceGeneratorGenerate:
         input_ids = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
         
-        print(f"[MOSS-VoiceGenerator] input_ids shape: {input_ids.shape}")
+        input_ids = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        
+        print(f"[MOSS-VoiceGenerator] Debugging Inputs:")
+        print(f"  - batch keys: {batch.keys()}")
+        print(f"  - input_ids shape: {input_ids.shape}")
+        print(f"  - input_ids dtype: {input_ids.dtype}")
+        if input_ids.dim() == 3:
+             print(f"  - input_ids sample [0,0]: {input_ids[0,0]}")
+             # Check if it's actually one-hot or something?
+        
+        # If input_ids is 3D, this is likely wrong for model.generate() unless it expects embeddings
+        # But 'input_ids' usually implies indices.
+        # Let's check if we accidentally tokenized it into characters or bytes in a weird way?
+
 
         with torch.no_grad(), _patch_tqdm_for_comfyui(model):
             try:
