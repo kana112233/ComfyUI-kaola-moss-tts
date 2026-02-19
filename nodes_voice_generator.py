@@ -75,12 +75,33 @@ class MossVoiceGeneratorLoadModel:
             load_kwargs["local_files_only"] = True
             print(f"[MOSS-VoiceGenerator] Local path detect, enabling local_files_only=True")
 
+        # Resolve Audio Tokenizer Path (Crucial for offline loading)
+        # 1. Try to find it in the same directory as model_path (if organized like ComfyUI/models/moss_ttsd/)
+        # 2. Or use default HF ID
+        audio_tokenizer_path = "OpenMOSS-Team/MOSS-Audio-Tokenizer"
+        
+        # Check standard ComfyUI path first
+        possible_local_tokenizer = get_model_path("MOSS-Audio-Tokenizer")
+        if os.path.exists(possible_local_tokenizer):
+            audio_tokenizer_path = possible_local_tokenizer
+            print(f"[MOSS-VoiceGenerator] Found local audio tokenizer at: {audio_tokenizer_path}")
+        else:
+            # Fallback: check peer directory if model_path is local
+            if os.path.exists(model_path):
+                parent_dir = os.path.dirname(model_path)
+                peer_tokenizer = os.path.join(parent_dir, "MOSS-Audio-Tokenizer")
+                if os.path.exists(peer_tokenizer):
+                    audio_tokenizer_path = peer_tokenizer
+                    print(f"[MOSS-VoiceGenerator] Found peer audio tokenizer at: {audio_tokenizer_path}")
+        
         # Load Processor
         print(f"[MOSS-VoiceGenerator] Loading processor from {model_path}...")
+        print(f"[MOSS-VoiceGenerator] Using codec_path: {audio_tokenizer_path}")
         try:
             processor = AutoProcessor.from_pretrained(
                 model_path, 
                 normalize_inputs=True,
+                codec_path=audio_tokenizer_path,
                 **load_kwargs
             )
             print(f"[MOSS-VoiceGenerator] Processor loaded successfully.")
