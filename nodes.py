@@ -11,13 +11,23 @@ from transformers.dynamic_module_utils import get_class_from_dynamic_module
 import transformers
 
 # Monkey-patch for PreTrainedConfig
-# Still needed for some environments/older transformers mix
+# In transformers v5, PreTrainedConfig was renamed to PretrainedConfig
+# MOSS-Audio-Tokenizer code still imports the old name
 try:
     import transformers.configuration_utils
     if not hasattr(transformers.configuration_utils, "PreTrainedConfig"):
+        # Try multiple fallback sources
+        _config_cls = None
         if hasattr(transformers, "PreTrainedConfig"):
-            transformers.configuration_utils.PreTrainedConfig = transformers.PreTrainedConfig
-            print("Monkey-patched transformers.configuration_utils.PreTrainedConfig")
+            _config_cls = transformers.PreTrainedConfig
+        elif hasattr(transformers, "PretrainedConfig"):
+            _config_cls = transformers.PretrainedConfig
+        elif hasattr(transformers.configuration_utils, "PretrainedConfig"):
+            _config_cls = transformers.configuration_utils.PretrainedConfig
+        
+        if _config_cls is not None:
+            transformers.configuration_utils.PreTrainedConfig = _config_cls
+            print(f"Monkey-patched transformers.configuration_utils.PreTrainedConfig from {_config_cls.__name__}")
 except ImportError:
     pass
 

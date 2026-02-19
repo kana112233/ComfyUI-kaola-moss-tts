@@ -121,6 +121,7 @@
             },
             "widgets_values": [
                 "[S1] Hello world. This validates the 3-node split architecture.",
+                "voice_clone",
                 1.1,
                 0.9,
                 1.1,
