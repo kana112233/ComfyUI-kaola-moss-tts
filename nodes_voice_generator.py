@@ -1,0 +1,223 @@
+import os
+import torch
+import torchaudio
+from transformers import AutoModel, AutoProcessor
+
+from .utils import (
+    get_model_path,
+    auto_download,
+    _patch_tqdm_for_comfyui,
+    normalize_text
+)
+
+# Try to import folder_paths for INPUT_TYPES
+try:
+    import folder_paths
+except ImportError:
+    folder_paths = None
+
+
+class MossVoiceGeneratorLoadModel:
+    @classmethod
+    def INPUT_TYPES(s):
+        # Default model ID
+        model_options = ["OpenMOSS-Team/MOSS-VoiceGenerator"]
+        # Add local models if available
+        if folder_paths:
+            local = folder_paths.get_filename_list("moss_ttsd")
+            if local:
+                model_options.extend(local)
+        
+        return {
+            "required": {
+                "model_path": (model_options,),
+                "device": (["auto", "cuda", "cpu", "mps"], {"default": "auto"}),
+                "precision": (["fp16", "bf16", "fp32"], {"default": "fp16"}),
+            }
+        }
+
+    RETURN_TYPES = ("MOSS_VOICE_GENERATOR_MODEL",)
+    RETURN_NAMES = ("moss_vg_model",)
+    FUNCTION = "load_model"
+    CATEGORY = "Kaola/MOSS-TTSD"
+
+    def load_model(self, model_path, device, precision):
+        # Auto-download if needed (mirroring behavior of MOSS-TTSD)
+        if model_path == "OpenMOSS-Team/MOSS-VoiceGenerator":
+            model_path = auto_download(model_path, "MOSS-VoiceGenerator")
+        
+        # Resolve local path
+        model_path = get_model_path(model_path)
+        print(f"[MOSS-VoiceGenerator] Loading model from: {model_path}")
+
+        # Device selection
+        if device == "auto":
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
+        
+        # Precision selection
+        dtype = torch.float32
+        if precision == "fp16":
+            dtype = torch.float16
+        elif precision == "bf16":
+            dtype = torch.bfloat16
+
+        # Load Processor
+        processor = AutoProcessor.from_pretrained(
+            model_path, 
+            trust_remote_code=True,
+            normalize_inputs=True
+        )
+        
+        # Determine attention implementation
+        attn_implementation = "eager"
+        if device == "cuda":
+            # Simple check for flash attention availability
+            try:
+                import flash_attn
+                if dtype in [torch.float16, torch.bfloat16]:
+                    major, _ = torch.cuda.get_device_capability()
+                    if major >= 8:
+                        attn_implementation = "flash_attention_2"
+                    else:
+                        attn_implementation = "sdpa"
+                else:
+                    attn_implementation = "sdpa"
+            except ImportError:
+                attn_implementation = "sdpa"
+        
+        print(f"[MOSS-VoiceGenerator] Using attention implementation: {attn_implementation}")
+
+        # Load Model
+        model = AutoModel.from_pretrained(
+            model_path,
+            trust_remote_code=True,
+            attn_implementation=attn_implementation,
+            torch_dtype=dtype
+        ).to(device)
+        model.eval()
+        
+        # Ensure processor's audio tokenizer is on the correct device
+        # Note: AutoProcessor usually loads the audio tokenizer.
+        # We move it to device to match MOSS-TTSD behavior, although MOSS-TTSD nodes.py sometimes keeps it on CPU?
+        # In MOSS-TTSD node we saw: processor.audio_tokenizer = processor.audio_tokenizer.cpu()
+        # But VoiceGenerator demo says: processor.audio_tokenizer = processor.audio_tokenizer.to(device)
+        # Let's follow the demo for VoiceGenerator.
+        if hasattr(processor, "audio_tokenizer"):
+            processor.audio_tokenizer = processor.audio_tokenizer.to(device)
+
+        moss_vg_model = {
+            "model": model,
+            "processor": processor,
+            "device": device,
+            "dtype": dtype
+        }
+        return (moss_vg_model,)
+
+
+class MossVoiceGeneratorGenerate:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "moss_vg_model": ("MOSS_VOICE_GENERATOR_MODEL",),
+                "text": ("STRING", {"multiline": True, "default": "Hello, this is a test."}),
+                "instruction": ("STRING", {"multiline": True, "default": "A clear, neutral voice for reading."}), 
+                "audio_temperature": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 2.0, "step": 0.1}),
+                "audio_top_p": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 1.0, "step": 0.05}),
+                "audio_top_k": ("INT", {"default": 50, "min": 1, "max": 200}),
+                "audio_repetition_penalty": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 2.0, "step": 0.1}),
+                "max_new_tokens": ("INT", {"default": 2000, "min": 100, "max": 10000}),
+                "text_normalize": ("BOOLEAN", {"default": True}),
+            }
+        }
+
+    RETURN_TYPES = ("AUDIO",)
+    RETURN_NAMES = ("audio",)
+    FUNCTION = "generate"
+    CATEGORY = "Kaola/MOSS-TTSD"
+
+    def generate(self, moss_vg_model, text, instruction, audio_temperature, audio_top_p, audio_top_k, audio_repetition_penalty, max_new_tokens, text_normalize):
+        model = moss_vg_model["model"]
+        processor = moss_vg_model["processor"]
+        device = moss_vg_model["device"]
+
+        if text_normalize:
+            text = normalize_text(text)
+            # instructions usually don't need MOSS-TTSD specific normalization (like [S1] tags), but simple clean up is fine
+            # normalize_text is designed for dialogue mostly. 
+            # For VoiceGenerator, the text determines content, instruction determines timbre.
+        
+        # Build conversation
+        # VoiceGenerator input format: https://huggingface.co/OpenMOSS-Team/MOSS-VoiceGenerator
+        # conversations = [ [processor.build_user_message(text=text, instruction=instruction)] ]
+        
+        conversations = [[processor.build_user_message(text=text, instruction=instruction)]]
+        
+        # Preprocess
+        batch = processor(conversations, mode="generation")
+        input_ids = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        
+        print(f"[MOSS-VoiceGenerator] input_ids shape: {input_ids.shape}")
+
+        with torch.no_grad(), _patch_tqdm_for_comfyui(model):
+            outputs = model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                max_new_tokens=max_new_tokens,
+                audio_temperature=audio_temperature,
+                audio_top_p=audio_top_p,
+                audio_top_k=audio_top_k,
+                audio_repetition_penalty=audio_repetition_penalty,
+            )
+
+        print(f"[MOSS-VoiceGenerator] model.generate() returned outputs")
+
+        # Decode
+        generated_audio_list = []
+        messages = processor.decode(outputs)
+        
+        for i, message in enumerate(messages):
+            if message is None:
+                continue
+            
+            # audio_codes_list contains waveform tensors (decoded by processor internally using audio_tokenizer)
+            if hasattr(message, "audio_codes_list") and message.audio_codes_list:
+                for wav in message.audio_codes_list:
+                    if isinstance(wav, torch.Tensor):
+                        # Move to CPU float32 for ComfyUI
+                        wav = wav.detach().cpu().float()
+                        # Output format: ComfyUI expects [batch, channels, samples] or [batch, samples]? 
+                        # MOSS-TTSD node adds unsqueeze(0).
+                        # Waveform from processor is usually [time] or [channels, time].
+                        # Official demo says: torchaudio.save(path, audio.unsqueeze(0), sr) ... implying audio is 1D tensor [T]
+                        if wav.dim() == 1:
+                            wav = wav.unsqueeze(0).unsqueeze(0) # [1, 1, T]
+                        elif wav.dim() == 2:
+                            wav = wav.unsqueeze(0) # [1, C, T]
+                        
+                        generated_audio_list.append(wav)
+        
+        if not generated_audio_list:
+            # Fallback empty
+            return (torch.zeros((1, 1, 1), dtype=torch.float32),)
+
+        # Return first audio (batch size 1 assumption)
+        fake_output = {"waveform": generated_audio_list[0], "sample_rate": int(processor.model_config.sampling_rate)}
+        return (fake_output,)
+
+# Mappings for ComfyUI
+NODE_CLASS_MAPPINGS = {
+    "MossVoiceGeneratorLoadModel": MossVoiceGeneratorLoadModel,
+    "MossVoiceGeneratorGenerate": MossVoiceGeneratorGenerate
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "MossVoiceGeneratorLoadModel": "Load MOSS Voice Generator Model",
+    "MossVoiceGeneratorGenerate": "MOSS Voice Generator Generate"
+}

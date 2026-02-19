@@ -75,6 +75,7 @@ Two models are required:
 | Model | HuggingFace ID | Size |
 |-------|----------------|------|
 | MOSS-TTSD | [OpenMOSS-Team/MOSS-TTSD-v1.0](https://huggingface.co/OpenMOSS-Team/MOSS-TTSD-v1.0) | ~7GB |
+| MOSS-VoiceGenerator | [OpenMOSS-Team/MOSS-VoiceGenerator](https://huggingface.co/OpenMOSS-Team/MOSS-VoiceGenerator) | ~3GB |
 | MOSS-Audio-Tokenizer | [OpenMOSS-Team/MOSS-Audio-Tokenizer](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer) | ~1GB |
 
 ### Auto Download
@@ -86,21 +87,31 @@ Place models in the `ComfyUI/models/moss_ttsd/` directory:
 ComfyUI/
 └── models/
     └── moss_ttsd/
-        ├── MOSS-TTSD-v1.0/         # TTS model
-        │   ├── config.json
-        │   ├── model.safetensors
-        │   └── ...
-        └── MOSS-Audio-Tokenizer/   # Audio codec
-            ├── config.json
-            ├── model.safetensors
-            └── ...
+        ├── MOSS-TTSD-v1.0/
+        ├── MOSS-VoiceGenerator/
+        └── MOSS-Audio-Tokenizer/
 ```
 
 You can use `huggingface-cli` to download:
 ```bash
 huggingface-cli download OpenMOSS-Team/MOSS-TTSD-v1.0 --local-dir ComfyUI/models/moss_ttsd/MOSS-TTSD-v1.0
+huggingface-cli download OpenMOSS-Team/MOSS-VoiceGenerator --local-dir ComfyUI/models/moss_ttsd/MOSS-VoiceGenerator
 huggingface-cli download OpenMOSS-Team/MOSS-Audio-Tokenizer --local-dir ComfyUI/models/moss_ttsd/MOSS-Audio-Tokenizer
 ```
+
+## Usage
+
+### 1. MOSS-TTSD (Text-to-Speech)
+- **Load Model**: Use `Load MOSS-TTSD Model` node.
+- **Load Codec**: Use `Load MOSS-Audio Codec` node.
+- **Generate**: Connect model and codec to `MOSS-TTSD Generate` node.
+
+### 2. MOSS-VoiceGenerator (Voice Design)
+- **Load Model**: Use `Load MOSS Voice Generator Model` node.
+- **Generate**: Use `MOSS Voice Generator Generate` node.
+    - **Instruction**: Describe the voice (e.g. "A clear, neutral voice", "年轻女性，温柔的声音").
+    - **Text**: The initial content to speak with this voice.
+    - **Output**: Returns an audio waveform that can be used as a *reference audio* for MOSS-TTSD `voice_clone` mode!
 
 ## License
 Apache 2.0 (Inherited from MOSS-TTSD)
