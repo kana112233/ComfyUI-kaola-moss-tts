@@ -4,7 +4,7 @@ A ComfyUI custom node for [MOSS-TTSD](https://github.com/OpenMOSS/MOSS-TTSD), a 
 
 ## Features
 - **Text-to-Speech Generation**: Generate high-fidelity speech from text.
-- **Multi-Speaker Support**: Supports standard `[S1]`, `[S2]` tags for dialogue generation.
+- **Multi-Speaker Support (up to 5)**: Supports `[S1]` ~ `[S5]` tags for multi-speaker dialogue generation.
 - **Voice Cloning**: Clone voices using short reference audio clips.
 
 ## Installation

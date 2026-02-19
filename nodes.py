@@ -343,8 +343,15 @@ class MossTTSDLoadModel:
 
 
 class MossTTSDGenerate:
+    MAX_SPEAKERS = 5
+
     @classmethod
     def INPUT_TYPES(s):
+        optional = {}
+        for i in range(1, s.MAX_SPEAKERS + 1):
+            optional[f"reference_audio_s{i}"] = ("AUDIO",)
+            optional[f"reference_text_s{i}"] = ("STRING", {"multiline": True, "default": ""})
+
         return {
             "required": {
                 "moss_model": ("MOSS_TTSD_MODEL",),
@@ -357,12 +364,7 @@ class MossTTSDGenerate:
                 "text_temperature": ("FLOAT", {"default": 1.1, "min": 0.1, "max": 2.0, "step": 0.1}),
                 "max_new_tokens": ("INT", {"default": 2000, "min": 100, "max": 10000}),
             },
-            "optional": {
-                "reference_audio_s1": ("AUDIO",),
-                "reference_text_s1": ("STRING", {"multiline": True, "default": ""}),
-                "reference_audio_s2": ("AUDIO",),
-                "reference_text_s2": ("STRING", {"multiline": True, "default": ""}),
-            }
+            "optional": optional,
         }
 
     RETURN_TYPES = ("AUDIO",)
@@ -378,9 +380,7 @@ class MossTTSDGenerate:
             waveform = torchaudio.functional.resample(waveform, sr, target_sr)
         return waveform
 
-    def generate(self, moss_model, moss_codec, text, mode, audio_temperature, audio_top_p, audio_repetition_penalty, text_temperature, max_new_tokens,
-                 reference_audio_s1=None, reference_text_s1=None, 
-                 reference_audio_s2=None, reference_text_s2=None):
+    def generate(self, moss_model, moss_codec, text, mode, audio_temperature, audio_top_p, audio_repetition_penalty, text_temperature, max_new_tokens, **kwargs):
         
         model = moss_model["model"]
         processor = moss_model["processor"]
@@ -393,16 +393,15 @@ class MossTTSDGenerate:
 
         target_sr = int(processor.model_config.sampling_rate)
         
-        # Collect reference audio and text per speaker SEPARATELY
-        # voice_clone only needs audio; continuation modes need both
+        # Collect reference audio and text per speaker (S1-S5)
         ref_wavs = []
         ref_texts = []
-        if reference_audio_s1:
-            ref_wavs.append(self.preprocess_audio(reference_audio_s1, target_sr))
-            ref_texts.append(reference_text_s1 if reference_text_s1 else "")
-        if reference_audio_s2:
-            ref_wavs.append(self.preprocess_audio(reference_audio_s2, target_sr))
-            ref_texts.append(reference_text_s2 if reference_text_s2 else "")
+        for i in range(1, self.MAX_SPEAKERS + 1):
+            ref_audio = kwargs.get(f"reference_audio_s{i}")
+            ref_text = kwargs.get(f"reference_text_s{i}")
+            if ref_audio:
+                ref_wavs.append(self.preprocess_audio(ref_audio, target_sr))
+                ref_texts.append(ref_text if ref_text else "")
 
         has_reference = len(ref_wavs) > 0
 
