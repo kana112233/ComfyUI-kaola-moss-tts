@@ -10,24 +10,54 @@ from transformers import AutoModel, AutoProcessor, AutoTokenizer, AutoConfig
 from transformers.dynamic_module_utils import get_class_from_dynamic_module
 import transformers
 
-# Monkey-patch for PreTrainedConfig
-# In transformers v5, PreTrainedConfig was renamed to PretrainedConfig
-# MOSS-Audio-Tokenizer code still imports the old name
+# ===========================================================================
+# Comprehensive transformers compatibility patches
+# MOSS-Audio-Tokenizer was built against bleeding-edge transformers (main branch)
+# and uses APIs not available in stable releases. We patch them here before
+# any dynamic module loading triggers the imports.
+# ===========================================================================
 try:
     import transformers.configuration_utils
+
+    # 1) PreTrainedConfig -> PretrainedConfig rename (transformers v5)
     if not hasattr(transformers.configuration_utils, "PreTrainedConfig"):
-        # Try multiple fallback sources
-        _config_cls = None
-        if hasattr(transformers, "PreTrainedConfig"):
-            _config_cls = transformers.PreTrainedConfig
-        elif hasattr(transformers, "PretrainedConfig"):
-            _config_cls = transformers.PretrainedConfig
-        elif hasattr(transformers.configuration_utils, "PretrainedConfig"):
-            _config_cls = transformers.configuration_utils.PretrainedConfig
-        
+        _config_cls = getattr(transformers, "PreTrainedConfig", None) \
+                      or getattr(transformers, "PretrainedConfig", None) \
+                      or getattr(transformers.configuration_utils, "PretrainedConfig", None)
         if _config_cls is not None:
             transformers.configuration_utils.PreTrainedConfig = _config_cls
-            print(f"Monkey-patched transformers.configuration_utils.PreTrainedConfig from {_config_cls.__name__}")
+            print(f"[MOSS-TTSD compat] Patched PreTrainedConfig <- {_config_cls.__name__}")
+except ImportError:
+    pass
+
+try:
+    import transformers.modeling_utils
+
+    # 2) PreTrainedAudioTokenizerBase (new class in dev branch, not in stable)
+    #    Falls back to PreTrainedModel which provides the same load/save infrastructure
+    if not hasattr(transformers.modeling_utils, "PreTrainedAudioTokenizerBase"):
+        _model_cls = getattr(transformers.modeling_utils, "PreTrainedModel", None)
+        if _model_cls is not None:
+            transformers.modeling_utils.PreTrainedAudioTokenizerBase = _model_cls
+            print("[MOSS-TTSD compat] Patched PreTrainedAudioTokenizerBase <- PreTrainedModel")
+except ImportError:
+    pass
+
+try:
+    import transformers.utils
+
+    # 3) auto_docstring decorator (new in dev branch, not in stable)
+    #    Replace with a no-op decorator
+    if not hasattr(transformers.utils, "auto_docstring"):
+        def _auto_docstring(*args, **kwargs):
+            """No-op replacement for auto_docstring decorator."""
+            def decorator(cls):
+                return cls
+            if args and callable(args[0]):
+                return args[0]
+            return decorator
+        transformers.utils.auto_docstring = _auto_docstring
+        print("[MOSS-TTSD compat] Patched auto_docstring <- no-op decorator")
 except ImportError:
     pass
 
