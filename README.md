@@ -84,6 +84,8 @@ Two models are required:
 | MOSS-TTSD | [OpenMOSS-Team/MOSS-TTSD-v1.0](https://huggingface.co/OpenMOSS-Team/MOSS-TTSD-v1.0) | ~7GB |
 | MOSS-VoiceGenerator | [OpenMOSS-Team/MOSS-VoiceGenerator](https://huggingface.co/OpenMOSS-Team/MOSS-VoiceGenerator) | ~3GB |
 | MOSS-SoundEffect | [OpenMOSS-Team/MOSS-SoundEffect](https://huggingface.co/OpenMOSS-Team/MOSS-SoundEffect) | ~3GB |
+| MOSS-TTS (Foundation) | [OpenMOSS-Team/MOSS-TTS](https://huggingface.co/OpenMOSS-Team/MOSS-TTS) | ~7GB |
+| MOSS-TTS-Local | [OpenMOSS-Team/MOSS-TTS-Local-Transformer](https://huggingface.co/OpenMOSS-Team/MOSS-TTS-Local-Transformer) | ~1.7GB |
 | MOSS-Audio-Tokenizer | [OpenMOSS-Team/MOSS-Audio-Tokenizer](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer) | ~1GB |
 
 ### Auto Download
@@ -127,7 +129,15 @@ huggingface-cli download OpenMOSS-Team/MOSS-Audio-Tokenizer --local-dir ComfyUI/
 - **Generate**: Use `MOSS Sound Effect Generate` node.
     - **Text**: Description (e.g., "birds chirping in a forest", "footsteps on wooden floor").
     - **Duration**: Target duration in seconds (approx 12.5 tokens/sec).
+    - **Duration**: Target duration in seconds (approx 12.5 tokens/sec).
     - **Output**: Returns the generated sound effect audio.
+
+### 4. MOSS-TTS (Foundation)
+- **Load Model**: Use `Load MOSS-TTS Foundation Model` node. Supports both 8B (`MOSS-TTS`) and 1.7B (`MOSS-TTS-Local-Transformer`).
+- **Generate**: Use `MOSS-TTS Generate` node.
+    - **Text**: Narration text.
+    - **Reference Audio**: (Optional) Connect for zero-shot voice cloning.
+    - **Output**: Generated speech.
 
 ## License
 Apache 2.0 (Inherited from MOSS-TTSD)
