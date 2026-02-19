@@ -104,11 +104,14 @@ class MossVoiceGeneratorLoadModel:
         print(f"[MOSS-VoiceGenerator] Loading processor from {model_path}...")
         print(f"[MOSS-VoiceGenerator] Using codec_path: {audio_tokenizer_path}")
         try:
+            # Processor doesn't support local_files_only in its custom init
+            processor_kwargs = {"trust_remote_code": True}
+            
             processor = AutoProcessor.from_pretrained(
                 model_path, 
                 normalize_inputs=True,
                 codec_path=audio_tokenizer_path,
-                **load_kwargs
+                **processor_kwargs
             )
             print(f"[MOSS-VoiceGenerator] Processor loaded successfully.")
         except Exception as e:
