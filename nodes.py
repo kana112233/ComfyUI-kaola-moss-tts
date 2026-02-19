@@ -274,17 +274,20 @@ class MossTTSDGenerate:
 
         target_sr = int(processor.model_config.sampling_rate)
         
-        # Collect reference audio/text pairs per speaker
+        # Collect reference audio and text per speaker SEPARATELY
+        # voice_clone only needs audio; continuation modes need both
         ref_wavs = []
         ref_texts = []
-        if reference_audio_s1 and reference_text_s1:
+        if reference_audio_s1:
             ref_wavs.append(self.preprocess_audio(reference_audio_s1, target_sr))
-            ref_texts.append(reference_text_s1)
-        if reference_audio_s2 and reference_text_s2:
+            ref_texts.append(reference_text_s1 if reference_text_s1 else "")
+        if reference_audio_s2:
             ref_wavs.append(self.preprocess_audio(reference_audio_s2, target_sr))
-            ref_texts.append(reference_text_s2)
+            ref_texts.append(reference_text_s2 if reference_text_s2 else "")
 
         has_reference = len(ref_wavs) > 0
+
+        print(f"[MOSS-TTSD] Mode: {mode}, has_reference: {has_reference}, ref_wavs: {len(ref_wavs)}")
 
         # Auto-fallback: if no reference provided but mode requires it, fall back to generation
         if not has_reference and mode != "generation":
@@ -300,17 +303,24 @@ class MossTTSDGenerate:
         elif mode == "voice_clone":
             # Voice cloning: encode each speaker's reference audio separately
             # User message includes reference audio codes, mode = "generation" (odd-length conversation)
-            print(f"[MOSS-TTSD] voice_clone mode: encoding {len(ref_wavs)} reference audio(s)")
+            print(f"[MOSS-TTSD] voice_clone: encoding {len(ref_wavs)} reference audio(s)")
             for i, rw in enumerate(ref_wavs):
-                print(f"  ref_wav[{i}] shape={rw.shape}, ref_text='{ref_texts[i][:50]}...'")
+                print(f"  ref_wav[{i}] shape={rw.shape}")
             with torch.no_grad():
                 reference = processor.encode_audios_from_wav(ref_wavs, sampling_rate=target_sr)
             print(f"[MOSS-TTSD] Encoded reference: {len(reference)} items")
             for i, ref in enumerate(reference):
-                print(f"  reference[{i}] shape={ref.shape}")
+                print(f"  reference[{i}] shape={ref.shape}, dtype={ref.dtype}")
+
             conversations = [[processor.build_user_message(text=text, reference=reference)]]
-            print(f"[MOSS-TTSD] Conversation content keys: {list(conversations[0][0].keys())}")
-            print(f"[MOSS-TTSD] audio_codes_list length: {len(conversations[0][0].get('audio_codes_list', []))}")
+            msg = conversations[0][0]
+            print(f"[MOSS-TTSD] UserMessage keys: {list(msg.keys())}")
+            print(f"[MOSS-TTSD] audio_codes_list count: {len(msg.get('audio_codes_list', []))}")
+            if msg.get('audio_codes_list'):
+                for i, ac in enumerate(msg['audio_codes_list']):
+                    print(f"  audio_codes_list[{i}] shape={ac.shape}")
+            print(f"[MOSS-TTSD] content preview (first 200 chars):")
+            print(f"  {msg.get('content', '')[:200]}")
             processor_mode = "generation"
 
         elif mode == "continuation":
