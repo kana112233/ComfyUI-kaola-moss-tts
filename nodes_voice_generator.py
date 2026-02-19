@@ -362,8 +362,7 @@ class MossSoundEffectLoadModel:
         try:
             processor_kwargs = {"trust_remote_code": True}
             processor = AutoProcessor.from_pretrained(
-                model_path, 
-                normalize_inputs=True,
+                model_path,
                 codec_path=audio_tokenizer_path,
                 **processor_kwargs
             )
