@@ -69,13 +69,19 @@ class MossVoiceGeneratorLoadModel:
         elif precision == "bf16":
             dtype = torch.bfloat16
 
+        # Prepare kwargs
+        load_kwargs = {"trust_remote_code": True}
+        if os.path.exists(model_path):
+            load_kwargs["local_files_only"] = True
+            print(f"[MOSS-VoiceGenerator] Local path detect, enabling local_files_only=True")
+
         # Load Processor
         print(f"[MOSS-VoiceGenerator] Loading processor from {model_path}...")
         try:
             processor = AutoProcessor.from_pretrained(
                 model_path, 
-                trust_remote_code=True,
-                normalize_inputs=True
+                normalize_inputs=True,
+                **load_kwargs
             )
             print(f"[MOSS-VoiceGenerator] Processor loaded successfully.")
         except Exception as e:
@@ -106,9 +112,9 @@ class MossVoiceGeneratorLoadModel:
         try:
             model = AutoModel.from_pretrained(
                 model_path,
-                trust_remote_code=True,
                 attn_implementation=attn_implementation,
-                torch_dtype=dtype
+                torch_dtype=dtype,
+                **load_kwargs
             ).to(device)
             model.eval()
             print(f"[MOSS-VoiceGenerator] Model loaded successfully.")

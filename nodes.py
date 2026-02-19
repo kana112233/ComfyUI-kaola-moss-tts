@@ -154,6 +154,12 @@ class MossTTSDLoadModel:
             "trust_remote_code": True,
             "torch_dtype": dtype,
         }
+        
+        # Enforce local_files_only if path exists
+        if os.path.exists(model_path):
+             model_kwargs["local_files_only"] = True
+             print(f"[MOSS-TTSD] Local path detected, enabling local_files_only=True")
+
         if use_accelerate:
             model_kwargs["device_map"] = "auto"
             model_kwargs["low_cpu_mem_usage"] = True
