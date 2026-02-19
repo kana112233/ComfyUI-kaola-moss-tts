@@ -69,7 +69,38 @@ Combines voice cloning (reference in user message) with continuation (prompt aud
 - **Note**: For multi-speaker dialogue, use `voice_clone` instead — continuation mode concatenates all reference audio, so the model tends to use the last speaker's voice
 
 ## Models
-The node will automatically download the [MOSS-TTSD-v1.0](https://huggingface.co/OpenMOSS-Team/MOSS-TTSD-v1.0) model from Hugging Face on the first run. You can configure a local path or different model ID in the node settings.
+
+Two models are required:
+
+| Model | HuggingFace ID | Size |
+|-------|----------------|------|
+| MOSS-TTSD | [OpenMOSS-Team/MOSS-TTSD-v1.0](https://huggingface.co/OpenMOSS-Team/MOSS-TTSD-v1.0) | ~7GB |
+| MOSS-Audio-Tokenizer | [OpenMOSS-Team/MOSS-Audio-Tokenizer](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer) | ~1GB |
+
+### Auto Download
+If models are not found locally, they will be **automatically downloaded** from HuggingFace on first run.
+
+### Manual Download
+Place models in the `ComfyUI/models/moss_ttsd/` directory:
+```
+ComfyUI/
+└── models/
+    └── moss_ttsd/
+        ├── MOSS-TTSD-v1.0/         # TTS model
+        │   ├── config.json
+        │   ├── model.safetensors
+        │   └── ...
+        └── MOSS-Audio-Tokenizer/   # Audio codec
+            ├── config.json
+            ├── model.safetensors
+            └── ...
+```
+
+You can use `huggingface-cli` to download:
+```bash
+huggingface-cli download OpenMOSS-Team/MOSS-TTSD-v1.0 --local-dir ComfyUI/models/moss_ttsd/MOSS-TTSD-v1.0
+huggingface-cli download OpenMOSS-Team/MOSS-Audio-Tokenizer --local-dir ComfyUI/models/moss_ttsd/MOSS-Audio-Tokenizer
+```
 
 ## License
 Apache 2.0 (Inherited from MOSS-TTSD)
