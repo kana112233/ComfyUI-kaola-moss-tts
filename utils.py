@@ -176,12 +176,23 @@ def auto_download(repo_id, local_dir_name):
         
         local_path = os.path.join(base_path, local_dir_name)
         if not os.path.exists(local_path):
-            print(f"Downloading {repo_id} to {local_path}...")
-            snapshot_download(repo_id=repo_id, local_dir=local_path)
+            print(f"[MOSS-TTSD] Local model not found at {local_path}.")
+            print(f"[MOSS-TTSD] Attempting to download {repo_id} from HuggingFace...")
+            print(f"[MOSS-TTSD] This may take a while depending on your internet connection.")
+            try:
+                snapshot_download(repo_id=repo_id, local_dir=local_path)
+                print(f"[MOSS-TTSD] Download completed successfully.")
+            except Exception as e:
+                print(f"[MOSS-TTSD] Download failed: {e}")
+                print(f"[MOSS-TTSD] Please download manually or check your connection.")
+                raise e
+        else:
+             print(f"[MOSS-TTSD] Found local model at {local_path}")
+             
         return local_path
     except ImportError:
-        print("huggingface_hub not installed, skipping auto-download check.")
+        print("[MOSS-TTSD] huggingface_hub not installed, skipping auto-download check.")
         return repo_id
     except Exception as e:
-        print(f"Download failed: {e}")
+        print(f"[MOSS-TTSD] Generic auto_download error: {e}")
         return repo_id

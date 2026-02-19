@@ -9,6 +9,13 @@ A ComfyUI custom node for [MOSS-TTSD](https://github.com/OpenMOSS/MOSS-TTSD), a 
 
 ## Installation
 
+> [!TIP]
+> We strongly recommend creating a fresh **Python 3.12** environment to avoid dependency conflicts:
+> ```bash
+> conda create -n moss_ttsd python=3.12 -y && conda activate moss_ttsd
+> pip install flash-attn --no-build-isolation
+> ```
+
 1.  Clone this repository into your `ComfyUI/custom_nodes` directory:
     ```bash
     cd custom_nodes

@@ -70,11 +70,17 @@ class MossVoiceGeneratorLoadModel:
             dtype = torch.bfloat16
 
         # Load Processor
-        processor = AutoProcessor.from_pretrained(
-            model_path, 
-            trust_remote_code=True,
-            normalize_inputs=True
-        )
+        print(f"[MOSS-VoiceGenerator] Loading processor from {model_path}...")
+        try:
+            processor = AutoProcessor.from_pretrained(
+                model_path, 
+                trust_remote_code=True,
+                normalize_inputs=True
+            )
+            print(f"[MOSS-VoiceGenerator] Processor loaded successfully.")
+        except Exception as e:
+            print(f"[MOSS-VoiceGenerator] Failed to load processor: {e}")
+            raise e
         
         # Determine attention implementation
         attn_implementation = "eager"
@@ -96,13 +102,19 @@ class MossVoiceGeneratorLoadModel:
         print(f"[MOSS-VoiceGenerator] Using attention implementation: {attn_implementation}")
 
         # Load Model
-        model = AutoModel.from_pretrained(
-            model_path,
-            trust_remote_code=True,
-            attn_implementation=attn_implementation,
-            torch_dtype=dtype
-        ).to(device)
-        model.eval()
+        print(f"[MOSS-VoiceGenerator] Loading model to {device} with {dtype}...")
+        try:
+            model = AutoModel.from_pretrained(
+                model_path,
+                trust_remote_code=True,
+                attn_implementation=attn_implementation,
+                torch_dtype=dtype
+            ).to(device)
+            model.eval()
+            print(f"[MOSS-VoiceGenerator] Model loaded successfully.")
+        except Exception as e:
+            print(f"[MOSS-VoiceGenerator] Failed to load model: {e}")
+            raise e
         
         # Ensure processor's audio tokenizer is on the correct device
         # Note: AutoProcessor usually loads the audio tokenizer.
