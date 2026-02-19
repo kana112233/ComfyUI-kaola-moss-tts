@@ -32,7 +32,7 @@ class MossVoiceGeneratorLoadModel:
             "required": {
                 "model_path": (model_options,),
                 "device": (["auto", "cuda", "cpu", "mps"], {"default": "auto"}),
-                "precision": (["fp16", "bf16", "fp32"], {"default": "fp16"}),
+                "precision": (["fp32", "fp16", "bf16"], {"default": "fp32"}),
             },
             "optional": {
                 "moss_codec": ("MOSS_AUDIO_CODEC",),
@@ -198,9 +198,6 @@ class MossVoiceGeneratorGenerate:
     RETURN_TYPES = ("AUDIO",)
     RETURN_NAMES = ("audio",)
     FUNCTION = "generate"
-    RETURN_TYPES = ("AUDIO",)
-    RETURN_NAMES = ("audio",)
-    FUNCTION = "generate"
     CATEGORY = "Kaola/MOSS-TTSD"
     DESCRIPTION = """Generates a voice sample based on a text description.
     
@@ -236,15 +233,20 @@ class MossVoiceGeneratorGenerate:
         print(f"[MOSS-VoiceGenerator] input_ids shape: {input_ids.shape}")
 
         with torch.no_grad(), _patch_tqdm_for_comfyui(model):
-            outputs = model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_new_tokens=max_new_tokens,
-                audio_temperature=audio_temperature,
-                audio_top_p=audio_top_p,
-                audio_top_k=audio_top_k,
-                audio_repetition_penalty=audio_repetition_penalty,
-            )
+            try:
+                outputs = model.generate(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    max_new_tokens=max_new_tokens,
+                    temperature=audio_temperature,
+                    top_p=audio_top_p,
+                    top_k=audio_top_k,
+                    repetition_penalty=audio_repetition_penalty,
+                )
+            except RuntimeError as e:
+                if "device-side assert" in str(e):
+                    raise RuntimeError(f"CUDA device-side assert triggered. This usually means FP16 instability. Please switch 'precision' to 'fp32' in the Loader node. Original error: {e}")
+                raise e
 
         print(f"[MOSS-VoiceGenerator] model.generate() returned outputs")
 
