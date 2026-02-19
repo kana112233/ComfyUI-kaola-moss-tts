@@ -236,7 +236,21 @@ class MossTTSDGenerate:
     RETURN_NAMES = ("audio",)
     FUNCTION = "generate"
     CATEGORY = "Kaola/MOSS-TTSD"
-    DESCRIPTION = "Generates speech using MOSS-TTSD. Supports multiple modes: 'generation' (text-only), 'voice_clone' (clones from audio), 'continuation' (continues from reference), and 'voice_clone_and_continuation' (best for cloning + style). Supports up to 5 speakers [S1]-[S5]."
+    DESCRIPTION = """Generates speech using MOSS-TTSD.
+    
+    Modes:
+    - 'generation': Text-to-speech without reference (uses internal voice).
+    - 'voice_clone': Clones voice from reference audio.
+    - 'continuation': Continues speech from reference audio (good for emotion).
+    - 'voice_clone_and_continuation': Combines cloning and continuation (best for mimicking).
+    
+    Parameters:
+    - [S1]-[S5]: Speaker tags for multi-speaker generation.
+    - audio_temperature: Higher = more dynamic/emotional, Lower = more stable.
+    - audio_top_p/top_k: Controls decoding randomness.
+    - text_normalize: Cleans text (removes special chars, merges tags).
+    - sample_rate_normalize: Resamples all inputs to match.
+    """
 
     def preprocess_audio(self, audio_data, target_sr):
         waveform = audio_data["waveform"]

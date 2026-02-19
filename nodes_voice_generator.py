@@ -146,7 +146,14 @@ class MossVoiceGeneratorGenerate:
     RETURN_NAMES = ("audio",)
     FUNCTION = "generate"
     CATEGORY = "Kaola/MOSS-TTSD"
-    DESCRIPTION = "Generates a voice sample based on a text description (Instruction). The output can be used as specific Reference Audio for MOSS-TTSD's 'voice_clone' mode."
+    DESCRIPTION = """Generates a voice sample based on a text description.
+    
+    Parameters:
+    - instruction: Describe the voice (e.g., 'A young female, soft voice').
+    - text: The content to be spoken.
+    - audio_temperature: 0.1-2.0. Higher = more variation.
+    - audio_top_p/top_k: Sampling parameters.
+    """
 
     def generate(self, moss_vg_model, text, instruction, audio_temperature, audio_top_p, audio_top_k, audio_repetition_penalty, max_new_tokens, text_normalize):
         model = moss_vg_model["model"]
