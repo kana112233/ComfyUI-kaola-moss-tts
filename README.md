@@ -23,12 +23,12 @@ A ComfyUI custom node pack for the [MOSS-TTS Family](https://github.com/OpenMOSS
 1.  Clone this repository into your `ComfyUI/custom_nodes` directory:
     ```bash
     cd custom_nodes
-    git clone https://github.com/kana112233/ComfyUI-kaola-moss-ttsd.git
+    git clone https://github.com/kana112233/ComfyUI-kaola-moss-tts.git
     ```
 
 2.  Install dependencies:
     ```bash
-    cd ComfyUI-kaola-moss-ttsd
+    cd ComfyUI-kaola-moss-tts
     pip install -r requirements.txt
     ```
 
