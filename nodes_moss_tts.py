@@ -96,19 +96,20 @@ class MossTTSLoadModel:
 
         # Load Processor
         print(f"[MOSS-TTS] Loading processor from {model_path}...")
+
+        # Monkey-patch for transformers < 5.0 compatibility
+        # MOSS-TTS's processing_moss_tts.py tries to register a custom modality
+        # via processing_utils.MODALITY_TO_BASE_CLASS_MAPPING which only exists in transformers >= 5.0
+        try:
+            from transformers import processing_utils
+            if not hasattr(processing_utils, "MODALITY_TO_BASE_CLASS_MAPPING"):
+                processing_utils.MODALITY_TO_BASE_CLASS_MAPPING = {}
+                print("[MOSS-TTS] Patched MODALITY_TO_BASE_CLASS_MAPPING for transformers compatibility")
+        except Exception:
+            pass
+
         try:
             processor_kwargs = {"trust_remote_code": True}
-            # Foundation models (MOSS-TTS) usually support normalize_inputs=True if they use Wav2Vec2Processor
-            # But let's check safety. If it's same architecture as TTSD (MossTTSDelay), it should support it.
-            # Local Transformer (1.7B) might be different.
-            # Safe bet: assume similar to TTSD first. If fails, user reports.
-            # Actually, VoiceGenerator supported it, SoundEffect didn't.
-            # Foundation 8B is typically `MossTTSDelay` (like TTSD), so it should support it.
-            # 1.7B Local is `MossTTSLocal`.
-            # Let's try with it, catch TypeError if needed?
-            # Or just omit it to be safe like SoundEffect?
-            # TTSD uses it. 8B is parent of TTSD. So 8B likely needs it or supports it.
-            
             processor = AutoProcessor.from_pretrained(
                 model_path, 
                 normalize_inputs=True, 
