@@ -1,4 +1,4 @@
-# ComfyUI-kaola-moss-ttsd
+# ComfyUI-kaola-moss-tts
 
 A ComfyUI custom node pack for the [MOSS-TTS Family](https://github.com/OpenMOSS/MOSS-TTS) — a suite of open-source speech and audio generation models. This pack provides nodes for **dialogue synthesis**, **narration**, **voice design**, and **sound effects**.
 
